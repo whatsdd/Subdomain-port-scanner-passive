@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SubRecon — Passive Scanner</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   SubRecon v2.0  —  MikroTik-inspired dark dashboard
+   ═══════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #1a1d2e;
+  --bg2:         #20233a;
+  --bg3:         #272b40;
+  --border:      #333652;
+  --accent:      #4e8ff7;
+  --accent2:     #3570d4;
+  --text:        #c8cfe4;
+  --text-dim:    #7a83a6;
+  --text-bright: #e8ecf8;
+  --green:       #3fc77a;
+  --orange:      #f0a843;
+  --red:         #e05252;
+  --red-bg:      #2a1515;
+  --th-bg:       #252840;
+  --tr-odd:      #1e2135;
+  --tr-even:     #1a1d2e;
+  --tr-hover:    #2a2e4a;
+  --tr-vuln:     #241212;
+  --tr-vuln-h:   #2e1818;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+/* ── Toolbar ────────────────────────────────────────────────── */
+.toolbar {
+  background: #111321;
+  border-bottom: 1px solid var(--border);
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.brand {
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 1.5px;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+.brand sup {
+  font-size: .55em;
+  color: var(--text-dim);
+  letter-spacing: 0;
+  font-weight: 400;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
+.tf-label { font-size: .75em; color: var(--text-dim); white-space: nowrap; }
+
+#domain-input {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text-bright);
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: .88em;
+  font-family: monospace;
+  width: 240px;
+  outline: none;
+  transition: border-color .15s;
+}
+#domain-input:focus { border-color: var(--accent); }
+#domain-input:disabled { opacity: .5; }
+
+.btn {
+  padding: 5px 13px;
+  border: none;
+  border-radius: 4px;
+  font-size: .8em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s, background .15s;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn-primary  { background: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled)  { background: var(--accent2); }
+.btn-stop     { background: var(--red); color: #fff; }
+.btn-stop:hover:not(:disabled)     { background: #c03030; }
+.btn-ghost    { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+.btn-ghost:hover:not(:disabled)    { background: var(--border); }
+
+.sep { width: 1px; height: 26px; background: var(--border); margin: 0 4px; }
+.spacer { flex: 1; }
+.export-group { display: none; gap: 4px; }
+
+/* ── Progress bar ───────────────────────────────────────────── */
+.pbar-wrap { height: 3px; background: var(--bg3); flex-shrink: 0; overflow: hidden; }
+.pbar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), #7ec8e3);
+  transition: width .35s ease;
+}
+
+/* ── Layout ─────────────────────────────────────────────────── */
+.layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────── */
+.sidebar {
+  width: 210px;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.sb-section { padding: 9px 10px; border-bottom: 1px solid var(--border); }
+
+.sb-title {
+  font-size: .62em;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: 7px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+.stat-row .lbl { font-size: .78em; color: var(--text-dim); }
+.stat-row .val { font-size: .82em; color: var(--text-bright); font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-row.red  .val { color: var(--red); }
+.stat-row.grn  .val { color: var(--green); }
+
+/* Sources */
+.src-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: .78em;
+  color: var(--text-dim);
+}
+.src-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: background .25s, box-shadow .25s;
+}
+.src-item.running .src-dot { background: var(--orange); box-shadow: 0 0 5px var(--orange); }
+.src-item.done    .src-dot { background: var(--green); }
+.src-item.error   .src-dot { background: var(--red); }
+.src-cnt { margin-left: auto; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* Activity log */
+.log-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.log-body {
+  flex: 1; overflow-y: auto;
+  padding: 5px 8px;
+  font-size: .7em;
+  font-family: monospace;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+.log-body::-webkit-scrollbar { width: 4px; }
+.log-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.le        { margin: 1px 0; word-break: break-all; }
+.le.ok     { color: var(--green); }
+.le.warn   { color: var(--orange); }
+.le.err    { color: var(--red); }
+
+/* ── Content ────────────────────────────────────────────────── */
+.content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Filter bar */
+.fbar {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 5px 9px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.fi {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: .78em;
+  outline: none;
+  width: 140px;
+}
+.fi:focus { border-color: var(--accent); }
+.fcheck {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .78em;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.fcheck input { cursor: pointer; accent-color: var(--accent); }
+.fcnt { margin-left: auto; font-size: .72em; color: var(--text-dim); }
+
+/* Table */
+.tbl-wrap { flex: 1; overflow: auto; }
+.tbl-wrap::-webkit-scrollbar { width: 7px; height: 7px; }
+.tbl-wrap::-webkit-scrollbar-track { background: var(--bg); }
+.tbl-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.tbl-wrap::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+table { width: 100%; border-collapse: collapse; font-size: .8em; }
+thead { position: sticky; top: 0; z-index: 1; }
+th {
+  background: var(--th-bg);
+  color: var(--text-dim);
+  padding: 7px 11px;
+  text-align: left;
+  font-weight: 600;
+  font-size: .74em;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
+}
+th:hover { color: var(--text-bright); background: var(--bg3); }
+th.sorted-asc::after  { content: ' ▲'; color: var(--accent); }
+th.sorted-desc::after { content: ' ▼'; color: var(--accent); }
+
+td {
+  padding: 5px 11px;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+  vertical-align: middle;
+}
+tr:nth-child(even) td { background: var(--tr-even); }
+tr:nth-child(odd)  td { background: var(--tr-odd); }
+tr:hover           td { background: var(--tr-hover) !important; cursor: pointer; }
+tr.vuln            td { background: var(--tr-vuln) !important; }
+tr.vuln:hover      td { background: var(--tr-vuln-h) !important; }
+
+.mono { font-family: monospace; }
+
+.pbadge {
+  display: inline-block;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: .76em;
+  font-family: monospace;
+  margin: 1px;
+}
+.cbadge {
+  display: inline-block;
+  background: var(--red);
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: .72em;
+  font-family: monospace;
+  margin: 1px;
+}
+.tbadge {
+  display: inline-block;
+  background: var(--bg3);
+  color: var(--text-dim);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: .72em;
+  margin: 1px;
+}
+.dim { color: var(--text-dim); }
+
+/* Empty state */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  color: var(--text-dim);
+}
+.empty .icon  { font-size: 2.8em; }
+.empty .title { font-size: 1em; font-weight: 600; }
+.empty .sub   { font-size: .82em; max-width: 400px; text-align: center; }
+
+/* Detail panel */
+.detail {
+  background: var(--bg2);
+  border-top: 2px solid var(--accent);
+  padding: 10px 14px;
+  max-height: 190px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.detail-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.detail-hdr .dtitle { font-weight: 700; color: var(--text-bright); font-size: .88em; }
+.dgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+  font-size: .78em;
+}
+.ditem .dk { color: var(--text-dim); font-size: .72em; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
+.ditem .dv { color: var(--text-bright); font-family: monospace; word-break: break-all; }
+
+/* Status bar */
+.statusbar {
+  background: #111321;
+  border-top: 1px solid var(--border);
+  padding: 3px 11px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: .7em;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.sdot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  display: inline-block;
+  flex-shrink: 0;
+}
+.statusbar.scanning .sdot { background: var(--orange); animation: pulse 1s infinite; }
+.statusbar.done     .sdot { background: var(--green); }
+.statusbar.error    .sdot { background: var(--red); }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+/* Utilities */
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ── Toolbar ───────────────────────────────────────────────── -->
+<div class="toolbar">
+  <div class="brand">SubRecon<sup>v2</sup></div>
+  <div class="sep"></div>
+  <span class="tf-label">Target:</span>
+  <input id="domain-input" type="text" placeholder="example.com"
+         autocomplete="off" spellcheck="false"
+         onkeydown="if(event.key==='Enter')startScan()">
+  <button class="btn btn-primary" id="scan-btn" onclick="startScan()">&#9654; Scan</button>
+  <button class="btn btn-stop"    id="stop-btn" onclick="stopScan()" disabled>&#9632; Stop</button>
+  <div class="spacer"></div>
+  <div class="export-group" id="export-group">
+    <button class="btn btn-ghost" onclick="exportJSON()">&#8659; JSON</button>
+    <button class="btn btn-ghost" onclick="exportCSV()">&#8659; CSV</button>
+    <button class="btn btn-ghost" onclick="downloadReport()">&#8659; HTML Report</button>
+  </div>
+</div>
+
+<!-- ── Progress bar ──────────────────────────────────────────── -->
+<div class="pbar-wrap"><div class="pbar" id="pbar"></div></div>
+
+<!-- ── Main layout ───────────────────────────────────────────── -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+
+    <div class="sb-section">
+      <div class="sb-title">Summary</div>
+      <div class="stat-row">
+        <span class="lbl">Subdomains</span>
+        <span class="val" id="s-subs">—</span>
+      </div>
+      <div class="stat-row grn">
+        <span class="lbl">Resolved</span>
+        <span class="val" id="s-res">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="lbl">Unique Ports</span>
+        <span class="val" id="s-ports">—</span>
+      </div>
+      <div class="stat-row red">
+        <span class="lbl">CVEs Found</span>
+        <span class="val" id="s-cves">—</span>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-title">Data Sources</div>
+      <div class="src-item" id="si-crtsh">
+        <div class="src-dot"></div><span>crt.sh</span>
+        <span class="src-cnt" id="sc-crtsh"></span>
+      </div>
+      <div class="src-item" id="si-anubis">
+        <div class="src-dot"></div><span>AnubisDB</span>
+        <span class="src-cnt" id="sc-anubis"></span>
+      </div>
+      <div class="src-item" id="si-hackertarget">
+        <div class="src-dot"></div><span>HackerTarget</span>
+        <span class="src-cnt" id="sc-hackertarget"></span>
+      </div>
+      <div class="src-item" id="si-alienvault">
+        <div class="src-dot"></div><span>AlienVault OTX</span>
+        <span class="src-cnt" id="sc-alienvault"></span>
+      </div>
+      <div class="src-item" id="si-internetdb">
+        <div class="src-dot"></div><span>Shodan InternetDB</span>
+        <span class="src-cnt" id="sc-internetdb"></span>
+      </div>
+    </div>
+
+    <div class="sb-section log-wrap">
+      <div class="sb-title">Activity Log</div>
+      <div class="log-body" id="log"></div>
+    </div>
+
+  </div><!-- /sidebar -->
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- Filter bar -->
+    <div class="fbar">
+      <input class="fi" id="f-sub"  placeholder="&#128269; Subdomain…" oninput="applyFilters()">
+      <input class="fi" id="f-ip"   placeholder="&#128269; IP…"        oninput="applyFilters()">
+      <input class="fi" id="f-port" placeholder="&#128269; Port…"       oninput="applyFilters()" type="number" min="1" max="65535" style="width:90px">
+      <label class="fcheck">
+        <input type="checkbox" id="f-vuln" onchange="applyFilters()"> CVEs only
+      </label>
+      <span class="fcnt" id="fcnt">0 entries</span>
+    </div>
+
+    <!-- Table wrapper -->
+    <div class="tbl-wrap" id="tbl-wrap">
+
+      <!-- Empty state -->
+      <div class="empty" id="empty-state">
+        <div class="icon">&#128270;</div>
+        <div class="title">Enter a domain to begin</div>
+        <div class="sub">
+          Passive reconnaissance using crt.sh · AnubisDB · HackerTarget ·
+          AlienVault OTX · Shodan InternetDB
+        </div>
+      </div>
+
+      <!-- Results table (hidden until scan starts) -->
+      <table id="rtable" class="hidden">
+        <thead>
+          <tr>
+            <th onclick="sortBy('subdomain',this)">Subdomain</th>
+            <th onclick="sortBy('ip',this)">IP Address</th>
+            <th onclick="sortBy('ports',this)">Open Ports</th>
+            <th onclick="sortBy('vulns',this)">CVEs</th>
+            <th>Tags</th>
+            <th onclick="sortBy('cpes',this)">CPEs</th>
+          </tr>
+        </thead>
+        <tbody id="rtbody"></tbody>
+      </table>
+
+    </div><!-- /tbl-wrap -->
+
+    <!-- Detail panel -->
+    <div class="detail hidden" id="detail">
+      <div class="detail-hdr">
+        <span class="dtitle" id="dtitle">Details</span>
+        <button class="btn btn-ghost" style="padding:2px 8px;font-size:.72em"
+                onclick="closeDetail()">&#10005; Close</button>
+      </div>
+      <div class="dgrid" id="dgrid"></div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /layout -->
+
+<!-- ── Status bar ─────────────────────────────────────────────── -->
+<div class="statusbar" id="sb">
+  <span class="sdot"></span>
+  <span id="sbtxt">Ready — enter a domain above and click Scan</span>
+  <span style="margin-left:auto" id="sbtime"></span>
+</div>
+
+<script>
+"use strict";
+
+// ── State ────────────────────────────────────────────────────────────────────
+let ws        = null;
+let scanId    = null;
+let allRows   = [];           // master data
+let filtRows  = [];           // currently displayed (after filters + sort)
+let sortField = null;
+let sortDir   = 1;            // 1 = asc, -1 = desc
+let sortTh    = null;         // active <th> element
+
+// Source key → sidebar element IDs
+const SRC_MAP = {
+  src_crtsh:        { si: 'si-crtsh',        sc: 'sc-crtsh'        },
+  src_anubis:       { si: 'si-anubis',        sc: 'sc-anubis'       },
+  src_hackertarget: { si: 'si-hackertarget',  sc: 'sc-hackertarget' },
+  src_alienvault:   { si: 'si-alienvault',    sc: 'sc-alienvault'   },
+  src_internetdb:   { si: 'si-internetdb',    sc: 'sc-internetdb'   },
+};
+
+// ── Scan control ─────────────────────────────────────────────────────────────
+function startScan() {
+  const domain = $('domain-input').value.trim().toLowerCase();
+  if (!domain) return flash('Please enter a domain.');
+
+  const ok = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/.test(domain);
+  if (!ok) return flash('Invalid domain — example: example.com');
+
+  reset();
+  setSbState('scanning');
+  setSbTxt('Scanning ' + domain + '…');
+
+  $('scan-btn').disabled = true;
+  $('stop-btn').disabled = false;
+  $('domain-input').disabled = true;
+  $('export-group').style.display = 'none';
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws/scan?domain=${encodeURIComponent(domain)}`);
+  ws.onmessage = onMsg;
+  ws.onclose   = onClose;
+  ws.onerror   = () => { addLog('WebSocket error', 'err'); setSbState('error'); };
+}
+
+function stopScan() {
+  if (ws) { ws.close(); }
+  addLog('Scan stopped by user.', 'warn');
+  setSbState('');
+  setSbTxt('Stopped.');
+}
+
+function onClose() {
+  $('scan-btn').disabled = false;
+  $('stop-btn').disabled = true;
+  $('domain-input').disabled = false;
+}
+
+// ── Event handler ─────────────────────────────────────────────────────────────
+function onMsg(evt) {
+  const d = JSON.parse(evt.data);
+  const { phase, message, pct, source, status, count } = d;
+
+  if (pct  !== undefined) setPbar(pct);
+  if (message)            { addLog(message, logCls(phase)); setSbTxt(message); }
+
+  switch (phase) {
+
+    case 'init':
+      scanId = d.scan_id;
+      showTable();
+      break;
+
+    case 'source_query':
+    case 'source_done':
+    case 'source_error':
+    case 'portscan_start':
+    case 'portscan_done':
+      if (source && SRC_MAP[source]) {
+        const ids = SRC_MAP[source];
+        const el = $(ids.si);
+        if (el) el.className = 'src-item ' + (status || '');
+        if (count !== undefined) {
+          const sc = $(ids.sc);
+          if (sc) sc.textContent = count;
+        }
+      }
+      break;
+
+    case 'discovery_done':
+      setStat('s-subs', (d.subdomains || []).length);
+      break;
+
+    case 'resolved':
+      upsertRow({ subdomain: d.subdomain, ip: d.ip, ports: [], vulns: [], tags: [], cpes: [], hostnames: [] });
+      updateStats();
+      break;
+
+    case 'port_result':
+      patchRowsByIp(d.ip, d.ports || [], d.vulns || []);
+      updateStats();
+      break;
+
+    case 'complete':
+      setSbState('done');
+      $('export-group').style.display = 'flex';
+      fetchFull();
+      break;
+
+    case 'error':
+      setSbState('error');
+      break;
+  }
+}
+
+// ── Fetch full results from REST ──────────────────────────────────────────────
+async function fetchFull() {
+  if (!scanId) return;
+  try {
+    const r = await fetch(`/api/scan/${scanId}`);
+    if (!r.ok) return;
+    const data = await r.json();
+
+    allRows = data.port_data || [];
+    const have = new Set(allRows.map(r => r.subdomain));
+    for (const r of (data.resolved || [])) {
+      if (!have.has(r.subdomain)) {
+        allRows.push({ subdomain: r.subdomain, ip: r.ip,
+                       ports: [], vulns: [], tags: [], cpes: [], hostnames: [] });
+      }
+    }
+    updateStats();
+    applyFilters();
+  } catch(e) {
+    addLog('Could not fetch full results: ' + e, 'err');
+  }
+}
+
+// ── Table helpers ─────────────────────────────────────────────────────────────
+function showTable() {
+  $('empty-state').classList.add('hidden');
+  $('rtable').classList.remove('hidden');
+}
+
+function upsertRow(row) {
+  const idx = allRows.findIndex(r => r.subdomain === row.subdomain);
+  if (idx >= 0) allRows[idx] = Object.assign(allRows[idx], row);
+  else          allRows.push(row);
+  applyFilters();
+}
+
+function patchRowsByIp(ip, ports, vulns) {
+  allRows.forEach(r => { if (r.ip === ip) { r.ports = ports; r.vulns = vulns; } });
+  applyFilters();
+}
+
+// ── Filtering & Sorting ───────────────────────────────────────────────────────
+function applyFilters() {
+  const fSub  = $('f-sub').value.toLowerCase();
+  const fIp   = $('f-ip').value.toLowerCase();
+  const fPort = parseInt($('f-port').value) || null;
+  const fVuln = $('f-vuln').checked;
+
+  filtRows = allRows.filter(r => {
+    if (fSub  && !r.subdomain.includes(fSub))       return false;
+    if (fIp   && !(r.ip||'').includes(fIp))          return false;
+    if (fPort && !(r.ports||[]).includes(fPort))      return false;
+    if (fVuln && (r.vulns||[]).length === 0)          return false;
+    return true;
+  });
+
+  if (sortField) {
+    filtRows.sort((a, b) => {
+      let va = a[sortField], vb = b[sortField];
+      if (Array.isArray(va)) va = va.length;
+      if (Array.isArray(vb)) vb = vb.length;
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      return va < vb ? -sortDir : va > vb ? sortDir : 0;
+    });
+  }
+
+  renderRows(filtRows);
+}
+
+function sortBy(field, th) {
+  if (sortField === field) {
+    sortDir *= -1;
+  } else {
+    sortField = field;
+    sortDir   = 1;
+  }
+  if (sortTh) sortTh.className = '';
+  sortTh = th;
+  th.className = sortDir === 1 ? 'sorted-asc' : 'sorted-desc';
+  applyFilters();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderRows(rows) {
+  $('fcnt').textContent = rows.length + (rows.length === 1 ? ' entry' : ' entries');
+  const tbody = $('rtbody');
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--text-dim)">No results match filters</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((r, i) => {
+    const ports = (r.ports||[]).slice().sort((a,b)=>a-b)
+                    .map(p => `<span class="pbadge">${p}</span>`).join('');
+    const vulns = (r.vulns||[])
+                    .map(v => `<span class="cbadge">${esc(v)}</span>`).join('');
+    const tags  = (r.tags||[])
+                    .map(t => `<span class="tbadge">${esc(t)}</span>`).join('');
+    const cpes  = (r.cpes||[]).slice(0,2).map(esc).join('<br>');
+    const hasV  = (r.vulns||[]).length > 0;
+
+    return `<tr class="${hasV?'vuln':''}" onclick="showDetail(${i})">
+      <td class="mono">${esc(r.subdomain)}</td>
+      <td class="mono">${esc(r.ip||'—')}</td>
+      <td>${ports || '<span class="dim">—</span>'}</td>
+      <td>${vulns || '<span class="dim">—</span>'}</td>
+      <td>${tags  || '<span class="dim">—</span>'}</td>
+      <td class="mono" style="font-size:.72em;color:var(--text-dim)">${cpes||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Detail panel ──────────────────────────────────────────────────────────────
+function showDetail(idx) {
+  const r = filtRows[idx];
+  if (!r) return;
+  $('dtitle').textContent = r.subdomain;
+  $('detail').classList.remove('hidden');
+
+  const fields = [
+    ['Subdomain',   r.subdomain],
+    ['IP Address',  r.ip || 'Unresolved'],
+    ['Open Ports',  (r.ports||[]).join(', ') || 'None'],
+    ['CVEs',        (r.vulns||[]).join(', ') || 'None'],
+    ['Tags',        (r.tags||[]).join(', ')  || 'None'],
+    ['Hostnames',   (r.hostnames||[]).join(', ') || 'None'],
+    ['CPEs',        (r.cpes||[]).join('\n')  || 'None'],
+  ];
+
+  $('dgrid').innerHTML = fields.map(([k,v]) =>
+    `<div class="ditem"><div class="dk">${k}</div><div class="dv">${esc(v)}</div></div>`
+  ).join('');
+}
+
+function closeDetail() { $('detail').classList.add('hidden'); }
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function updateStats() {
+  setStat('s-subs',  allRows.length);
+  setStat('s-res',   allRows.filter(r => r.ip).length);
+  setStat('s-ports', new Set(allRows.flatMap(r => r.ports||[])).size);
+  setStat('s-cves',  allRows.reduce((n,r) => n + (r.vulns||[]).length, 0));
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function exportJSON() {
+  dl(`subrecon_${scanId||'scan'}.json`,
+     JSON.stringify(allRows, null, 2), 'application/json');
+}
+
+function exportCSV() {
+  const hdr = 'Subdomain,IP,Ports,CVEs,Tags,CPEs\n';
+  const body = allRows.map(r => [
+    r.subdomain, r.ip||'',
+    (r.ports||[]).join('|'),
+    (r.vulns||[]).join('|'),
+    (r.tags||[]).join('|'),
+    (r.cpes||[]).join('|'),
+  ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  dl(`subrecon_${scanId||'scan'}.csv`, hdr + body, 'text/csv');
+}
+
+async function downloadReport() {
+  if (!scanId) return;
+  const a = document.createElement('a');
+  a.href     = `/api/scan/${scanId}/report`;
+  a.download = `subrecon_report_${scanId}.html`;
+  a.click();
+}
+
+function dl(name, content, type) {
+  const url = URL.createObjectURL(new Blob([content], {type}));
+  const a = Object.assign(document.createElement('a'), {href:url, download:name});
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Reset ─────────────────────────────────────────────────────────────────────
+function reset() {
+  allRows   = [];
+  filtRows  = [];
+  scanId    = null;
+  sortField = null;
+  sortDir   = 1;
+  if (sortTh) { sortTh.className = ''; sortTh = null; }
+
+  $('rtbody').innerHTML = '';
+  $('log').innerHTML    = '';
+  $('detail').classList.add('hidden');
+  setPbar(0);
+
+  ['s-subs','s-res','s-ports','s-cves'].forEach(id => setStat(id, '—'));
+  ['crtsh','anubis','hackertarget','alienvault','internetdb'].forEach(s => {
+    const si = $(`si-${s}`), sc = $(`sc-${s}`);
+    if (si) si.className = 'src-item';
+    if (sc) sc.textContent = '';
+  });
+  $('fcnt').textContent  = '0 entries';
+  $('f-sub').value       = '';
+  $('f-ip').value        = '';
+  $('f-port').value      = '';
+  $('f-vuln').checked    = false;
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+function setPbar(pct)   { $('pbar').style.width = pct + '%'; }
+function setStat(id, v) { $(id).textContent = v; }
+function setSbState(s)  { $('sb').className = 'statusbar ' + (s||''); }
+function setSbTxt(t)    {
+  $('sbtxt').textContent = t;
+  $('sbtime').textContent = new Date().toLocaleTimeString();
+}
+
+function addLog(msg, cls) {
+  const log = $('log');
+  const el  = document.createElement('div');
+  el.className = 'le ' + (cls||'');
+  el.textContent = msg;
+  log.appendChild(el);
+  log.scrollTop  = log.scrollHeight;
+}
+
+function logCls(phase) {
+  const ok   = ['complete','resolved','source_done','discovery_done','resolution_done','portscan_done'];
+  const warn = ['unresolved','source_error'];
+  const err  = ['error'];
+  if (ok.includes(phase))   return 'ok';
+  if (warn.includes(phase)) return 'warn';
+  if (err.includes(phase))  return 'err';
+  return '';
+}
+
+function esc(s) {
+  return String(s||'')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function flash(msg) {
+  alert(msg);   // simple fallback
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDetail();
+});
+
+// Auto-focus domain input
+$('domain-input').focus();
+</script>
+</body>
+</html>
